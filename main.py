@@ -8,14 +8,14 @@ from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
-from aiogram.types import (
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardRemove
-)
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
+
+# ВАЖНО: правильные импорты для настроек бота в aiogram 3.x
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from supabase import create_client, Client
 
@@ -41,8 +41,11 @@ if not BOT_TOKEN:
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("SUPABASE_URL / SUPABASE_KEY are not set")
 
-# aiogram 3.x
-bot = Bot(token=BOT_TOKEN, default=types.DefaultBotProperties(parse_mode="HTML"))
+# aiogram 3.x — создаём бота с корректным DefaultBotProperties
+bot = Bot(
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
 dp = Dispatcher(storage=MemoryStorage())
 
 # Supabase
@@ -55,11 +58,9 @@ class Onboarding(StatesGroup):
     email = State()      # емейл
     segment = State()    # сегмент (индивид/бизнес)
 
-
 # -------------------- Helpers --------------------
 def is_valid_email(text: str) -> bool:
     return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text.strip(), flags=re.I))
-
 
 async def upsert_user_diag(telegram_id: int, email: str | None, pain: str, segment: str):
     """
@@ -73,25 +74,23 @@ async def upsert_user_diag(telegram_id: int, email: str | None, pain: str, segme
     }
     is_business = segment.lower() != "individual"
 
-    # upsert по user_id
     payload = {
-        "user_id": str(telegram_id),
+        "user_id": str(Telegram_id := telegram_id),
         "email": email or None,
         "is_business": is_business,
         "answers": answers,
     }
-    # Проверим есть ли запись
+
     existing = supabase.table("users").select("*").eq("user_id", str(telegram_id)).execute()
     if existing.data:
         supabase.table("users").update(payload).eq("user_id", str(telegram_id)).execute()
     else:
         supabase.table("users").insert(payload).execute()
 
-
 async def upsert_lifeos_user(user: types.User):
     """
     На всякий — поддерживаем твою таблицу `lifeos_users`
-    (telegram_id, username, first_name) — если её нет или не нужна, можно не трогать.
+    (telegram_id, username, first_name). Если её нет — тихо пропустим.
     """
     try:
         existing = supabase.table("lifeos_users").select("*").eq("telegram_id", user.id).execute()
@@ -102,15 +101,11 @@ async def upsert_lifeos_user(user: types.User):
                 "first_name": user.first_name or ""
             }).execute()
     except Exception:
-        # если таблицы нет — молча пропускаем, чтобы не падать
-        pass
-
+        pass  # таблицы нет — не падаем
 
 # -------------------- Keyboards --------------------
 yes_no_kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Yes"), KeyboardButton(text="No")]
-    ],
+    keyboard=[[KeyboardButton(text="Yes"), KeyboardButton(text="No")]],
     resize_keyboard=True
 )
 
@@ -136,10 +131,8 @@ segment_kb = ReplyKeyboardMarkup(
 # -------------------- Flow --------------------
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
-    # Сохраним в lifeos_users
     await upsert_lifeos_user(message.from_user)
 
-    # Приветствие (EN) + ссылки
     welcome = (
         f"👋 Hey, <b>{message.from_user.first_name or 'there'}</b>!\n\n"
         f"Welcome to <b>LifeOS</b> — your personal AI Operator.\n"
@@ -149,11 +142,9 @@ async def cmd_start(message: types.Message, state: FSMContext):
     )
     await message.answer(welcome, disable_web_page_preview=False)
 
-    # 1) Спрашиваем, знает ли он про LifeOS
     q = "Quick one: do you already know what <b>LifeOS</b> is?"
     await message.answer(q, reply_markup=yes_no_kb)
     await state.set_state(Onboarding.know)
-
 
 @dp.message(Onboarding.know, F.text.casefold().in_(["yes", "no"]))
 async def know_lifeos(message: types.Message, state: FSMContext):
@@ -166,7 +157,6 @@ async def know_lifeos(message: types.Message, state: FSMContext):
         )
         await message.answer(explain)
 
-    # 2) Переходим к боли/цели
     ask_pain = (
         "What’s the <b>#1 reason</b> you want to optimize your life/work with AI?\n"
         "Pick a quick option or type your own."
@@ -174,28 +164,25 @@ async def know_lifeos(message: types.Message, state: FSMContext):
     await message.answer(ask_pain, reply_markup=pains_kb)
     await state.set_state(Onboarding.pain)
 
-
 @dp.message(Onboarding.know)
 async def know_fallback(message: types.Message):
     await message.answer("Please choose <b>Yes</b> or <b>No</b> 🙂", reply_markup=yes_no_kb)
 
-
 @dp.message(Onboarding.pain, F.text.len() > 1)
 async def save_pain(message: types.Message, state: FSMContext):
     await state.update_data(pain=message.text.strip())
-
-    # 3) Спросим email
     await message.answer(
         "Great — drop your <b>email</b> so I can send you templates and the quickstart guide.",
         reply_markup=ReplyKeyboardRemove()
     )
     await state.set_state(Onboarding.email)
 
-
 @dp.message(Onboarding.pain)
 async def pain_fallback(message: types.Message):
-    await message.answer("Tell me in a few words what you want to improve (or pick a button).", reply_markup=pains_kb)
-
+    await message.answer(
+        "Tell me in a few words what you want to improve (or pick a button).",
+        reply_markup=pains_kb
+    )
 
 @dp.message(Onboarding.email)
 async def capture_email(message: types.Message, state: FSMContext):
@@ -205,25 +192,19 @@ async def capture_email(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(email=text)
-
-    # 4) Сегмент — для предложения Automation Lab крупняку
-    await message.answer(
-        "And lastly — what describes you best?",
-        reply_markup=segment_kb
-    )
+    await message.answer("And lastly — what describes you best?", reply_markup=segment_kb)
     await state.set_state(Onboarding.segment)
 
-
-@dp.message(Onboarding.segment, F.text.casefold().in_([
-    "individual", "small business (1–20)", "mid/large company (20+)"
-]))
+@dp.message(
+    Onboarding.segment,
+    F.text.casefold().in_(["individual", "small business (1–20)", "mid/large company (20+)"])
+)
 async def finish_segment(message: types.Message, state: FSMContext):
     segment = message.text.strip()
     data = await state.get_data()
     pain = data.get("pain", "")
     email = data.get("email", None)
 
-    # Сохраняем в Supabase (таблица users)
     await upsert_user_diag(
         telegram_id=message.from_user.id,
         email=email,
@@ -231,7 +212,6 @@ async def finish_segment(message: types.Message, state: FSMContext):
         segment=segment
     )
 
-    # Финальные ветки
     summary = (
         "✅ <b>All set!</b>\n\n"
         f"• Pain/goal: <i>{pain}</i>\n"
@@ -249,7 +229,7 @@ async def finish_segment(message: types.Message, state: FSMContext):
             "Nice — we’ll focus on owner-friendly automation wins: lead handling, content ops, "
             "reporting, client onboarding, and more.\n\n"
         )
-    else:  # Mid/Large company (20+)
+    else:
         summary += (
             "For larger teams, we also run <b>Automation Lab</b> — a hands-on track to ship "
             "cost-cutting automations and agentic workflows in weeks, not months. "
@@ -264,11 +244,12 @@ async def finish_segment(message: types.Message, state: FSMContext):
     await message.answer(summary, reply_markup=ReplyKeyboardRemove(), disable_web_page_preview=False)
     await state.clear()
 
-
 @dp.message(Onboarding.segment)
 async def segment_fallback(message: types.Message):
-    await message.answer("Please choose one: Individual / Small business (1–20) / Mid/Large company (20+).", reply_markup=segment_kb)
-
+    await message.answer(
+        "Please choose one: Individual / Small business (1–20) / Mid/Large company (20+).",
+        reply_markup=segment_kb
+    )
 
 # -------------------- Run --------------------
 async def main():
@@ -277,6 +258,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
