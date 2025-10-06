@@ -1,53 +1,41 @@
+from aiogram import types, F
+from aiogram.filters import Command, CommandStart
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+
 import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
-from aiogram.types import LinkPreviewOptions
-from supabase import create_client, Client
-from dotenv import load_dotenv
 
-load_dotenv()
+# Загружаем переменные окружения
+CHANNEL_URL = os.getenv("CHANNEL_URL") or os.getenv("LIFEOS_CHANNEL_URL") or "https://t.me/LifeOS_AI"
+MANAGER_USERNAME = os.getenv("MANAGER_USERNAME") or "@lifeos_admin1"
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-CHANNEL_URL = os.getenv("LIFEOS_CHANNEL_URL")
-MANAGER_USERNAME = os.getenv("MANAGER_USERNAME")
+# Кнопка "Start Diagnostic"
+start_kb = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="Start Diagnostic")]],
+    resize_keyboard=True
+)
 
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher()
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
+# Приветствие при старте
 @dp.message(CommandStart())
 async def start(message: types.Message):
-    user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
-
-    existing = supabase.table("lifeos_users").select("*").eq("telegram_id", user_id).execute()
-    if not existing.data:
-        supabase.table("lifeos_users").insert({
-            "telegram_id": user_id,
-            "username": username,
-            "first_name": first_name
-        }).execute()
-
-    username_clean = (MANAGER_USERNAME or "").lstrip("@")
     text = (
-        f"👋 Привет, {first_name}!\n\n"
-        f"Добро пожаловать в <b>LifeOS</b> — твой личный AI-оператор.\n"
-        f"🚀 Я помогу тебе собрать свою систему продуктивности и начать путь оптимизации.\n\n"
-        f"👉 Вступай в канал: <a href=\"{CHANNEL_URL}\">{CHANNEL_URL}</a>\n"
-        f"💬 Или пиши менеджеру: <a href=\"https://t.me/{username_clean}\">@{username_clean}</a>"
+        f"👋 Hey, {message.from_user.first_name or 'there'}!\n\n"
+        "Welcome to **LifeOS** — your personal AI Operator.\n"
+        "I’ll help you build your system of focus, automation, and growth.\n\n"
+        f"👉 Join the community: {CHANNEL_URL}\n"
+        f"💬 Or talk to your manager: {MANAGER_USERNAME}"
     )
+    await message.answer(text, reply_markup=start_kb, parse_mode="Markdown")
 
-    await message.answer(text, link_preview_options=LinkPreviewOptions(is_disabled=True))
+# Обработка команды /diagnostic
+@dp.message(Command("diagnostic"))
+async def diagnostic_entry(message: types.Message):
+    await message.answer("Starting diagnostic… (step 1 coming next)", reply_markup=ReplyKeyboardRemove())
 
-if __name__ == "__main__":
-    import asyncio
-    async def main():
-        await dp.start_polling(bot)
-    asyncio.run(main())
+# Чтобы работала кнопка "Start Diagnostic"
+@dp.message(F.text.casefold() == "start diagnostic")
+async def diagnostic_via_button(message: types.Message):
+    await diagnostic_entry(message)
+
+
 
 
