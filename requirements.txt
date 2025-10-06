@@ -2,5 +2,5 @@ aiogram==3.4.1
 python-dotenv==1.0.1
 magic-filter==1.0.12
 supabase==2.4.0
-httpx==0.26.0
-httpcore==1.0.5
+httpx>=0.24,<0.26
+httpcore>=0.15,<1.0
