@@ -1,40 +1,130 @@
-from aiogram import types, F
-from aiogram.filters import Command, CommandStart
+import os
+import asyncio
+import logging
+
+from dotenv import load_dotenv
+
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.enums import ParseMode
+from aiogram.filters import CommandStart, Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
-import os
+from supabase import create_client, Client
 
-# Загружаем переменные окружения
-CHANNEL_URL = os.getenv("CHANNEL_URL") or os.getenv("LIFEOS_CHANNEL_URL") or "https://t.me/LifeOS_AI"
-MANAGER_USERNAME = os.getenv("MANAGER_USERNAME") or "@lifeos_admin1"
 
-# Кнопка "Start Diagnostic"
+# ---------- Load .env ----------
+load_dotenv()
+
+BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
+SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+
+# Канал / менеджер (с запасными значениями)
+CHANNEL_URL: str = (
+    os.getenv("CHANNEL_URL")
+    or os.getenv("LIFEOS_CHANNEL_URL")
+    or "https://t.me/LifeOS_AI"
+)
+MANAGER_USERNAME: str = os.getenv("MANAGER_USERNAME", "@lifeos_admin1")
+
+
+# ---------- Basic validation (полезно для логов Railway) ----------
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN is not set")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("SUPABASE_URL / SUPABASE_KEY are not set")
+
+
+# ---------- Init bot / dp / db BEFORE handlers ----------
+bot = Bot(BOT_TOKEN, default=types.default.DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+# ---------- Keyboard ----------
 start_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="Start Diagnostic")]],
-    resize_keyboard=True
+    resize_keyboard=True,
 )
 
-# Приветствие при старте
+
+# ---------- DB helpers ----------
+async def ensure_user_saved(user_id: int, username: str | None, first_name: str | None) -> None:
+    """
+    Проверяем, есть ли пользователь в таблице lifeos_users; если нет — добавляем.
+    """
+    try:
+        # Проверка существования
+        existing = supabase.table("lifeos_users").select("*").eq("telegram_id", user_id).execute()
+        if not existing.data:
+            supabase.table("lifeos_users").insert(
+                {
+                    "telegram_id": user_id,
+                    "username": username or "",
+                    "first_name": first_name or "",
+                }
+            ).execute()
+    except Exception as e:
+        logging.exception("Failed to upsert user in lifeos_users: %s", e)
+
+
+def safe_manager_tag(raw: str) -> str:
+    """
+    Приводим MANAGER_USERNAME к виду @username.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return "@lifeos_admin1"
+    if not raw.startswith("@"):
+        return f"@{raw}"
+    return raw
+
+
+# ---------- Handlers ----------
 @dp.message(CommandStart())
-async def start(message: types.Message):
+async def cmd_start(message: types.Message) -> None:
+    user = message.from_user
+    await ensure_user_saved(user.id, user.username, user.first_name)
+
+    manager_tag = safe_manager_tag(MANAGER_USERNAME)
+
     text = (
-        f"👋 Hey, {message.from_user.first_name or 'there'}!\n\n"
-        "Welcome to **LifeOS** — your personal AI Operator.\n"
-        "I’ll help you build your system of focus, automation, and growth.\n\n"
-        f"👉 Join the community: {CHANNEL_URL}\n"
-        f"💬 Or talk to your manager: {MANAGER_USERNAME}"
+        f"👋 Hey, <b>{user.first_name or 'there'}</b>!\n\n"
+        f"Welcome to <b>LifeOS</b> — your personal AI Operator.\n"
+        f"I’ll help you build your system of focus, automation, and growth.\n\n"
+        f"👉 Join the community: <a href='{CHANNEL_URL}'>LifeOS Channel</a>\n"
+        f"💬 Or talk to your manager: {manager_tag}"
     )
-    await message.answer(text, reply_markup=start_kb, parse_mode="Markdown")
 
-# Обработка команды /diagnostic
+    await message.answer(text, reply_markup=start_kb)
+
+
 @dp.message(Command("diagnostic"))
-async def diagnostic_entry(message: types.Message):
-    await message.answer("Starting diagnostic… (step 1 coming next)", reply_markup=ReplyKeyboardRemove())
+async def diagnostic_cmd(message: types.Message) -> None:
+    await message.answer(
+        "✅ Starting diagnostic! <i>(step 1 coming next)</i>",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    # Здесь позже появится логика шага 1
 
-# Чтобы работала кнопка "Start Diagnostic"
+
 @dp.message(F.text.casefold() == "start diagnostic")
-async def diagnostic_via_button(message: types.Message):
-    await diagnostic_entry(message)
+async def diagnostic_btn(message: types.Message) -> None:
+    # Нажатие на кнопку — запускаем ту же логику
+    await diagnostic_cmd(message)
+
+
+# ---------- Entrypoint ----------
+async def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    logging.info("Bot started")
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
 
 
 
