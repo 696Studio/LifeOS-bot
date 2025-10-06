@@ -1,0 +1,5 @@
+aiogram==3.*
+python-dotenv
+supabase==2.*
+httpx==0.*
+pydantic==2.*
