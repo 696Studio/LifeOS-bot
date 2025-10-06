@@ -3,4 +3,4 @@ magic-filter==1.0.12
 python-dotenv==1.0.1
 supabase==2.3.4
 httpx==0.25.2
-pydantic>=2.6,<3
+httpcore==0.17.3
