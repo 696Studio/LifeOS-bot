@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.client.default import DefaultBotProperties
 
 from supabase import create_client, Client
 
@@ -28,15 +29,15 @@ CHANNEL_URL: str = (
 MANAGER_USERNAME: str = os.getenv("MANAGER_USERNAME", "@lifeos_admin1")
 
 
-# ---------- Basic validation (полезно для логов Railway) ----------
+# ---------- Basic validation ----------
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("SUPABASE_URL / SUPABASE_KEY are not set")
 
 
-# ---------- Init bot / dp / db BEFORE handlers ----------
-bot = Bot(BOT_TOKEN, default=types.default.DefaultBotProperties(parse_mode=ParseMode.HTML))
+# ---------- Init bot / dp / db ----------
+bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -51,11 +52,8 @@ start_kb = ReplyKeyboardMarkup(
 
 # ---------- DB helpers ----------
 async def ensure_user_saved(user_id: int, username: str | None, first_name: str | None) -> None:
-    """
-    Проверяем, есть ли пользователь в таблице lifeos_users; если нет — добавляем.
-    """
+    """Проверяем, есть ли пользователь в таблице lifeos_users; если нет — добавляем."""
     try:
-        # Проверка существования
         existing = supabase.table("lifeos_users").select("*").eq("telegram_id", user_id).execute()
         if not existing.data:
             supabase.table("lifeos_users").insert(
@@ -70,9 +68,7 @@ async def ensure_user_saved(user_id: int, username: str | None, first_name: str 
 
 
 def safe_manager_tag(raw: str) -> str:
-    """
-    Приводим MANAGER_USERNAME к виду @username.
-    """
+    """Приводим MANAGER_USERNAME к виду @username."""
     raw = (raw or "").strip()
     if not raw:
         return "@lifeos_admin1"
@@ -106,19 +102,17 @@ async def diagnostic_cmd(message: types.Message) -> None:
         "✅ Starting diagnostic! <i>(step 1 coming next)</i>",
         reply_markup=ReplyKeyboardRemove(),
     )
-    # Здесь позже появится логика шага 1
 
 
 @dp.message(F.text.casefold() == "start diagnostic")
 async def diagnostic_btn(message: types.Message) -> None:
-    # Нажатие на кнопку — запускаем ту же логику
     await diagnostic_cmd(message)
 
 
 # ---------- Entrypoint ----------
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    logging.info("Bot started")
+    logging.info("🚀 LifeOS Bot started successfully")
     await dp.start_polling(bot)
 
 
