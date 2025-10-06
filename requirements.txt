@@ -3,4 +3,3 @@ python-dotenv==1.0.1
 magic-filter==1.0.12
 supabase==2.4.0
 httpx==0.26.0
-httpcore==0.17.3
