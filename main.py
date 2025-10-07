@@ -253,11 +253,19 @@ async def segment_fallback(message: types.Message):
 
 # -------------------- Run --------------------
 async def main():
+    def _mask(s: str) -> str:
+        return (s[:8] + "…") if s else ""
+
+    logging.info("SUPABASE_URL = %s", SUPABASE_URL)
+    logging.info("SUPABASE_KEY prefix = %s", _mask(SUPABASE_KEY))
+
     logging.info("🚀 LifeOS Bot started successfully")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
 
 
 
