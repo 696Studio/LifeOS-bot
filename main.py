@@ -206,6 +206,21 @@ async def capture_email(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(email=text)
+
+    # СРАЗУ сохраняем пользователя после email с временным сегментом "unknown"
+    try:
+        data = await state.get_data()
+        pain = data.get("pain", "")
+        await upsert_user_diag(
+            telegram_id=message.from_user.id,
+            email=text,
+            pain=pain,
+            segment="unknown",  # временный сегмент до выбора
+        )
+        logging.info("Saved user after email (pre-segment)")
+    except Exception as e:
+        logging.exception("Failed to save user after email: %s", e)
+
     # Сегмент + возможность ввести свой вариант
     await message.answer(
         "And finally — what best describes you?\n(You can also type your own.)",
@@ -221,6 +236,7 @@ async def finish_segment(message: types.Message, state: FSMContext):
     pain = data.get("pain", "")
     email = data.get("email", None)
 
+    # Обновляем уже созданную запись (upsert по user_id)
     await upsert_user_diag(
         telegram_id=message.from_user.id,
         email=email,
@@ -289,6 +305,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
